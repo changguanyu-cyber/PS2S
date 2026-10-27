@@ -11,7 +11,7 @@
 
 # Approach
 
-![描述文字](fig_main2.png)
+![描述文字](fig_main.png)
 
 Overview of our method. Top: A shared encoder maps periodically equivalent PSMILES views to latent representations, while a decoder reconstructs a shared canonical periodic target, promoting representation consistency. Bottom left: The encoder employs contractive damped message passing with symmetrically normalized bond adjacency, $tanh$ activation, and spectral-norm bounds satisfying $\gamma_s+\gamma_b<1$, ensuring convergence to a unique fixed point for each input graph. Bottom right: Pretraining combines representation consistency, periodic alignment, and structure restoration losses. Structure restoration reconstructs graph connectivity, atom types, and PSMILES tokens to preserve structural information.
 
