@@ -17,7 +17,7 @@ Overview of our method. Top: A shared encoder maps periodically equivalent PSMIL
 
 
 
-# prepare the datasets
+# Prepare the Datasets
 1. The BMD and NOOP2025 dataset are under  the `dataset/` directory:
 
 ```
