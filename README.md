@@ -53,34 +53,34 @@ transformers == 4.38.2
 torch-spline-conv == 1.2.1
 ```
 
-# Training
-You can start training our two modules by using the following two commands, respectively:
+# Representations
 
-## Molecular Graph Interaction Module
 ```
-cd /root/MG_interaction
-python train.py
-```
-
-## Diffusion Module
-```
-cd /root/diffusion
-python main.py --mode train --cfg mol
+root/
+├── EncoderFeatures/
+│ └── get_different_atom_feature_of_smiles.py/
+│ └── get_different_features_of_smiles.py/
+└── 
 ```
 
-# Sampling
+You can get representations in the `EncoderFeatures/` directory. Through `get_different_atom_feature_of_smiles.py` you can get atom-level representations, and through `get_different_features_of_smiles.py` you can get molecule-level representations.
 
+# Models
 
-## Molecular Graph Interaction Module
 ```
-cd /root/MG_interaction
-python gen_graph.py
+root/
+├── ps2s/
+└── 
 ```
 
-After generating molecular graphs, you should have a ready model in `/root/diffusion/results`. Putting the graphs into `/root/diffusion/inference/result_.npy`. Then start sampling by using the following command:
+You can get the detail of ps2s model under the `ps2s/` directory.
 
-## Diffusion Module
+# Generation
+
 ```
-cd /root/diffusion
-python main.py --cfg mol --mode pred  --ckpt ./results/ready_model/models/ckpt_ema.pt 
+root/
+├── PolymerGenerationPretrainedModelTrain/
+└──
 ```
+
+You can get the detail of generation task under the PolymerGenerationPretrainedModelTrain/` directory.
