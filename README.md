@@ -17,31 +17,26 @@ Overview of our method. Top: A shared encoder maps periodically equivalent PSMIL
 
 
 
-# Download and prepare the datasets
-1. Download the datasets:
-
-   - [MD17](https://figshare.com/articles/Revised_MD17_dataset_rMD17_/12672038/3)
-
-2. After downloading, unzip the files and place them under the `root/` directory:
+# prepare the datasets
+1. The BMD and NOOP2025 dataset are under  the `dataset/` directory:
 
 ```
 root/
-├── rmd17/
-│ └── rmd17_aspirin.npz/
-└── diffusion/
-└── MG_interaction/
+├── dataset/
+│ └── BMD/
+│ └── NOOP2025/
+└── data/
 ```
 
-3. Extracting the `.npy` files.  Place all `.npy` files into the `root/` directory as follows:
+2. About pretrained datas, you can find under the `dataset/` directory:
 
 ```
 root/
-├── extracted_data/
-│ └── aspirin_coord.npy/
-└── rmd17/
-└── diffusion/
-└── MG_interaction/
+├── dataset/
+│ └── pretrain_data.csv/
+└── data/
 ```
+
 # Dependencies
 we recommend installing the following packages:
 
