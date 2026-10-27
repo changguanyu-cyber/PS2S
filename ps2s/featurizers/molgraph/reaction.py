@@ -1,0 +1,154 @@
+from dataclasses import InitVar, dataclass
+from enum import auto
+import logging
+from typing import Iterable, Sequence, TypeAlias
+import numpy as np
+from rdkit import Chem
+from rdkit.Chem.rdchem import Bond, Mol
+from ps2s.data.molgraph import MolGraph
+from ps2s.featurizers.base import GraphFeaturizer
+from ps2s.featurizers.molgraph.mixins import _MolGraphFeaturizerMixin
+from ps2s.types import Rxn
+from ps2s.utils.utils import EnumMapping
+logger = logging.getLogger(__name__)
+
+class RxnMode(EnumMapping):
+    REAC_PROD = auto()
+    REAC_PROD_BALANCE = auto()
+    REAC_DIFF = auto()
+    REAC_DIFF_BALANCE = auto()
+    PROD_DIFF = auto()
+    PROD_DIFF_BALANCE = auto()
+
+@dataclass
+class CondensedGraphOfReactionFeaturizer(_MolGraphFeaturizerMixin, GraphFeaturizer[Rxn]):
+    mode_: InitVar[str | RxnMode] = RxnMode.REAC_DIFF
+
+    def __post_init__(self, mode_: str | RxnMode):
+        super().__post_init__()
+        self.mode = mode_
+        self.atom_fdim += len(self.atom_featurizer) - len(self.atom_featurizer.atomic_nums) - 1
+        self.bond_fdim *= 2
+
+    @property
+    def mode(self) -> RxnMode:
+        return self.__mode
+
+    @mode.setter
+    def mode(self, m: str | RxnMode):
+        self.__mode = RxnMode.get(m)
+
+    def __call__(self, rxn: tuple[Chem.Mol, Chem.Mol], atom_features_extra: np.ndarray | None=None, bond_features_extra: np.ndarray | None=None) -> MolGraph:
+        if atom_features_extra is not None:
+            logger.warning("'atom_features_extra' is currently unsupported for reactions")
+        if bond_features_extra is not None:
+            logger.warning("'bond_features_extra' is currently unsupported for reactions")
+        reac, pdt = rxn
+        r2p_idx_map, pdt_idxs, reac_idxs = self.map_reac_to_prod(reac, pdt)
+        V = self._calc_node_feature_matrix(reac, pdt, r2p_idx_map, pdt_idxs, reac_idxs)
+        E = []
+        edge_index = [[], []]
+        n_atoms_tot = len(V)
+        n_atoms_reac = reac.GetNumAtoms()
+        for u in range(n_atoms_tot):
+            for v in range(u + 1, n_atoms_tot):
+                b_reac, b_prod = self._get_bonds(reac, pdt, r2p_idx_map, pdt_idxs, n_atoms_reac, u, v)
+                if b_reac is None and b_prod is None:
+                    continue
+                x_e = self._calc_edge_feature(b_reac, b_prod)
+                E.extend([x_e, x_e])
+                edge_index[0].extend([u, v])
+                edge_index[1].extend([v, u])
+        E = np.array(E) if len(E) > 0 else np.empty((0, self.bond_fdim))
+        rev_edge_index = np.arange(len(E)).reshape(-1, 2)[:, ::-1].ravel()
+        edge_index = np.array(edge_index, int)
+        return MolGraph(V, E, edge_index, rev_edge_index)
+
+    def _calc_node_feature_matrix(self, rct: Mol, pdt: Mol, r2p_idx_map: dict[int, int], pdt_idxs: Iterable[int], reac_idxs: Iterable[int]) -> np.ndarray:
+        X_v_r1 = np.array([self.atom_featurizer(a) for a in rct.GetAtoms()])
+        X_v_p2 = np.array([self.atom_featurizer(pdt.GetAtomWithIdx(i)) for i in pdt_idxs])
+        X_v_p2 = X_v_p2.reshape(-1, X_v_r1.shape[1])
+        if self.mode in [RxnMode.REAC_DIFF, RxnMode.PROD_DIFF, RxnMode.REAC_PROD]:
+            X_v_r2 = [self.atom_featurizer.num_only(pdt.GetAtomWithIdx(i)) for i in pdt_idxs]
+            X_v_r2 = np.array(X_v_r2).reshape(-1, X_v_r1.shape[1])
+            X_v_p1 = np.array([self.atom_featurizer(pdt.GetAtomWithIdx(r2p_idx_map[a.GetIdx()])) if a.GetIdx() not in reac_idxs else self.atom_featurizer.num_only(a) for a in rct.GetAtoms()])
+        else:
+            X_v_r2 = [self.atom_featurizer(pdt.GetAtomWithIdx(i)) for i in pdt_idxs]
+            X_v_r2 = np.array(X_v_r2).reshape(-1, X_v_r1.shape[1])
+            X_v_p1 = np.array([self.atom_featurizer(pdt.GetAtomWithIdx(r2p_idx_map[a.GetIdx()])) if a.GetIdx() not in reac_idxs else self.atom_featurizer(a) for a in rct.GetAtoms()])
+        X_v_r = np.concatenate((X_v_r1, X_v_r2))
+        X_v_p = np.concatenate((X_v_p1, X_v_p2))
+        m = min(len(X_v_r), len(X_v_p))
+        if self.mode in [RxnMode.REAC_PROD, RxnMode.REAC_PROD_BALANCE]:
+            X_v = np.hstack((X_v_r[:m], X_v_p[:m, len(self.atom_featurizer.atomic_nums) + 1:]))
+        else:
+            X_v_d = X_v_p[:m] - X_v_r[:m]
+            if self.mode in [RxnMode.REAC_DIFF, RxnMode.REAC_DIFF_BALANCE]:
+                X_v = np.hstack((X_v_r[:m], X_v_d[:m, len(self.atom_featurizer.atomic_nums) + 1:]))
+            else:
+                X_v = np.hstack((X_v_p[:m], X_v_d[:m, len(self.atom_featurizer.atomic_nums) + 1:]))
+        return X_v
+
+    def _get_bonds(self, rct: Bond, pdt: Bond, ri2pj: dict[int, int], pids: Sequence[int], n_atoms_r: int, u: int, v: int) -> tuple[Bond, Bond]:
+        if u >= n_atoms_r and v >= n_atoms_r:
+            b_prod = pdt.GetBondBetweenAtoms(pids[u - n_atoms_r], pids[v - n_atoms_r])
+            if self.mode in [RxnMode.REAC_PROD_BALANCE, RxnMode.REAC_DIFF_BALANCE, RxnMode.PROD_DIFF_BALANCE]:
+                b_reac = b_prod
+            else:
+                b_reac = None
+        elif u < n_atoms_r and v >= n_atoms_r:
+            b_reac = None
+            if u in ri2pj:
+                b_prod = pdt.GetBondBetweenAtoms(ri2pj[u], pids[v - n_atoms_r])
+            else:
+                b_prod = None
+        else:
+            b_reac = rct.GetBondBetweenAtoms(u, v)
+            if u in ri2pj and v in ri2pj:
+                b_prod = pdt.GetBondBetweenAtoms(ri2pj[u], ri2pj[v])
+            elif self.mode in [RxnMode.REAC_PROD_BALANCE, RxnMode.REAC_DIFF_BALANCE, RxnMode.PROD_DIFF_BALANCE]:
+                b_prod = None if u in ri2pj or v in ri2pj else b_reac
+            else:
+                b_prod = None
+        return (b_reac, b_prod)
+
+    def _calc_edge_feature(self, b_reac: Bond, b_pdt: Bond):
+        x_e_r = self.bond_featurizer(b_reac)
+        x_e_p = self.bond_featurizer(b_pdt)
+        x_e_d = x_e_p - x_e_r
+        if self.mode in [RxnMode.REAC_PROD, RxnMode.REAC_PROD_BALANCE]:
+            x_e = np.hstack((x_e_r, x_e_p))
+        elif self.mode in [RxnMode.REAC_DIFF, RxnMode.REAC_DIFF_BALANCE]:
+            x_e = np.hstack((x_e_r, x_e_d))
+        else:
+            x_e = np.hstack((x_e_p, x_e_d))
+        return x_e
+
+    @classmethod
+    def map_reac_to_prod(cls, reacs: Chem.Mol, pdts: Chem.Mol) -> tuple[dict[int, int], list[int], list[int]]:
+        pdt_idxs = []
+        mapno2pj = {}
+        reac_atommap_nums = {a.GetAtomMapNum() for a in reacs.GetAtoms()}
+        for a in pdts.GetAtoms():
+            map_num = a.GetAtomMapNum()
+            j = a.GetIdx()
+            if map_num > 0:
+                mapno2pj[map_num] = j
+                if map_num not in reac_atommap_nums:
+                    pdt_idxs.append(j)
+            else:
+                pdt_idxs.append(j)
+        rct_idxs = []
+        r2p_idx_map = {}
+        for a in reacs.GetAtoms():
+            map_num = a.GetAtomMapNum()
+            i = a.GetIdx()
+            if map_num > 0:
+                try:
+                    r2p_idx_map[i] = mapno2pj[map_num]
+                except KeyError:
+                    rct_idxs.append(i)
+            else:
+                rct_idxs.append(i)
+        return (r2p_idx_map, pdt_idxs, rct_idxs)
+CGRFeaturizer: TypeAlias = CondensedGraphOfReactionFeaturizer
