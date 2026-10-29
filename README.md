@@ -87,4 +87,4 @@ You can get the detail of generation task under the PolymerGenerationPretrainedM
 
 # Checkpoints
 
-You can find checkpoints of different pretraining epochs and pretrained data scales in [(https://github.com/changguanyu-cyber/PS2S)](https://huggingface.co/2002chang2002/PS2S).
+You can find checkpoints of different pretraining epochs and pretrained data scales in [(https://huggingface.co/2002chang2002/PS2S)](https://huggingface.co/2002chang2002/PS2S).
