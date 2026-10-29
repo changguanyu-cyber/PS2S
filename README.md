@@ -83,7 +83,7 @@ root/
 └──
 ```
 
-You can get the detail of generation task under the PolymerGenerationPretrainedModelTrain/` directory.
+You can get the detail of generation task under the `PolymerGenerationPretrainedModelTrain/` directory.
 
 # Checkpoints
 
